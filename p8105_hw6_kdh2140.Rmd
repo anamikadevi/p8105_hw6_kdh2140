@@ -126,7 +126,7 @@ bwt_df =
   drop_na() %>% 
   
   # Retain only necessary variables
-  select(bwt, blength, gaweeks, bhead, babysex, wtgain, mrace) %>% 
+  select(bwt, blength, gaweeks, bhead, babysex, wtgain, mrace, fincome) %>% 
   
   # Relabel race categories and convert to factor
    mutate(
@@ -152,19 +152,62 @@ The first prespecified models are as follows:
 
 * **Model 2:** birthweight ~ head circumference | length | sex
 
-My proposed model focuses on the mother's weight gain during pregnancy in pounds `wtgain` and mother's race `mrace` as well as the interaction between these two variables on the outcome variable, birthweight `btw`. This model is based on the underlying hypothesis of the effects of gestational diabetes mellitus (GDM) on birthweight, using mother's weight gain during pregnancy as a proxy measure. The risk of developing GDM is highest among Asian (particularly South Asian), Black, American Indian, and Hispanic women. Further, hese differences do not appear to be fully explained by differences in prepregnancy body mass index (BMI). More information is available [here](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4180530/). It is acknowledged that this hypothesis is a stretch for these variables, but it may be interesting to measure regardless. The model is as follows:
+My proposed model focuses on the mother's weight gain during pregnancy in pounds `wtgain` and family income `fincome` on the outcome variable, birthweight `btw`. This model is based on the social determinants of health, nutritional access, and financial barriers that may affect the health of the mother and baby, measured through birthweight. 
 
-* **Model 3:** birthweight ~ wtgain + mrace + wtgain*mrace
+The model is as follows:
+
+* **Model 3:** birthweight ~ wtgain + fincome
+
+### Fit a linear model
+
+```{r}
+fit = lm(bwt ~ wtgain + fincome, data = bwt_df)
+
+fit %>% 
+broom::tidy()
+```
+
+### Check residual plot
+
+```{r}
+modelr::add_residuals(bwt_df, fit) %>% 
+  ggplot(aes(x = wtgain, y = resid)) +
+  geom_point()  
+
+bwt_df %>% 
+  modelr::add_residuals(fit) %>% 
+  ggplot(aes(x = fincome, y = resid)) + 
+  geom_point() 
+```
+
+With both predictors, residuals appear randomly scattered around the 0 line. 
+
+```{r}
+bwt_df %>% 
+ggplot(aes(x = wtgain, y = bwt)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm")
+
+bwt_df %>% 
+ggplot(aes(x = fincome, y = bwt)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "lm")
+```
+
+Don't seem related...
+
+```{r, eval = FALSE}
+bwt_df %>% 
+  add_predictions(linear_mod) %>% 
+  ggplot(aes(x = x, y = y)) + 
+  geom_point() +
+  geom_line(aes(y = pred), color = "blue")
+```
 
 
 
 
-
-
-
-
-
-
+### Problem 3
 
 
 
