@@ -306,6 +306,16 @@ bwt_df %>%
 ```
 
 
+model_fit = lm(bwt ~ gaweeks, data = baby_df)
+
+baby_df %>% 
+  modelr::add_residuals(model_fit) %>% 
+  ggplot(aes(x = gaweeks, y = resid)) + 
+  geom_point()
+
+
+
+
 ## Problem 3
 
 #### Import the data
@@ -366,27 +376,82 @@ weather_df %>%
   
   # Create a distribution plot of r.squared values
   ggplot(aes(x = r.squared)) +
-  geom_density()
+  geom_density() 
 
 
 ######identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval 
 
 ```
 
-
-
-
-
-
-
-
+#### log(beta)
 
 ```{r}
-#lm(tmax ~ tmin, data = weather_df) %>% 
-#  broom::tidy() %>% 
-#  sel
-#  term = str_replace(term,"\\(Intercept\\)","Intercept") %>% 
-#  log = log(Intercept*tmin)
+
+### Write a function to obtain log_beta value for each observation
+
+obtain_log = function(df) {
+ 
+   # Run the linear model and tify
+  lm(tmax ~ tmin, data = df) %>% 
+  broom::tidy() %>% 
+    
+  # Select necessary values
+  select(term, estimate) %>% 
+  
+  # Tidy
+  mutate(
+    term = str_replace(term, "\\(Intercept\\)", "intercept")) %>% 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate) %>% 
+    
+  #Obtain log_beta values
+  mutate(
+    log_betas = log(intercept*tmin))
+
+}
+
+
+### Run the bootstrap to calculate mean log_betas
+
+weather_df %>% 
+  bootstrap(1000, id = "strap_number") %>% 
+  
+  # Run the linear model across the bootstrap observations
+  mutate(
+    models = map(.x = strap, ~obtain_log(.x))) %>% 
+  
+  # Tidy data
+  select(strap_number, models) %>% 
+  unnest(models) %>% 
+  select(strap_number, log_betas) %>% 
+  
+  # Calculate average log_betas value for bootstrap observations
+  summarize(mean_log_betas = mean(log_betas))
+
 ```
 
+interpret
+
+```{r}
+# Run the bootstrap to create log_beta plot
+weather_df %>% 
+  bootstrap(1000, id = "strap_number") %>% 
+  
+  # Run the linear model across the bootstrap observations
+  mutate(
+    models = map(.x = strap, ~obtain_log(.x))) %>% 
+  
+  # Tidy data
+  select(strap_number, models) %>% 
+  unnest(models) %>% 
+  select(strap_number, log_betas) %>% 
+  
+  # Create a distribution plot of r.squared values
+  ggplot(aes(x = log_betas)) +
+  geom_density() 
+
+
+######identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval 
+```
 
