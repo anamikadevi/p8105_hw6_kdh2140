@@ -63,7 +63,7 @@ homicide_df =
 
 #### Fitting the model for Baltimore
 
-```{r}
+```{r fit_baltimore}
 # Create a dataframe with only Baltimore, MD
 baltimore_df = 
   homicide_df %>% 
@@ -86,12 +86,16 @@ glm(resolved ~ victim_age + victim_race + victim_sex,
   knitr::kable(digits = 3)
 ```
 
-#### Mapping the model over the entire dataset
+#### Map the model over the dataset
 
-```{r}
+```{r map_hom}
 models_results_df = 
   homicide_df %>% 
+  
+    # Nest the data
     nest(data = -city_state) %>% 
+  
+    # Use map to perform linear regression over the dataset
     mutate(
       models = 
         map(.x = data, 
@@ -99,8 +103,12 @@ models_results_df =
                  data = .x,
                  family = binomial())), 
       results = map(models, broom::tidy)) %>% 
+  
+    # Tidy results
     select(city_state, results) %>% 
     unnest(results) %>% 
+  
+    # Calculate Odds Ratios and Confidence Intervals
     mutate(
       OR = exp(estimate),
       CI_lower = exp(estimate - 1.96 * std.error),
@@ -110,7 +118,9 @@ models_results_df =
 
 #### Visualization
 
-```{r}
+```{r hom_vis}
+# Odds of a male homicide case being solved as compared to a female's by city
+
 models_results_df %>% 
   filter(term == "victim_sexMale") %>% 
   mutate(city_state = fct_reorder(city_state, OR)) %>% 
@@ -124,7 +134,7 @@ models_results_df %>%
 
 #### Import and Tidy Data
 
-```{r message=FALSE, warning=FALSE}
+```{r import_bwt, message=FALSE, warning=FALSE}
 bwt_df = 
   
   # Import dataset using read_csv
@@ -162,11 +172,11 @@ My proposed model focuses on the mother's weight gain during pregnancy in pounds
 
 The model is as follows:
 
-* **Model 3:** birthweight ~ wtgain + fincome
+* **Model 3:** birthweight ~ weight gain + family income
 
 #### Fit linear models
 
-```{r}
+```{r models_bwt}
 fit1 = lm(bwt ~ blength + gaweeks, data = bwt_df)
 
 fit2 = lm(bwt ~ blength + bhead + babysex + 
@@ -188,7 +198,7 @@ broom::tidy()
 
 #### Check residual plots
 
-```{r}
+```{r resid_bwt}
 modelr::add_residuals(bwt_df, fit3) %>% 
   ggplot(aes(x = wtgain, y = resid, color = fincome)) +
   geom_point()  
@@ -205,12 +215,16 @@ With both predictors, residuals appear randomly scattered around the 0 line.
 
 ```{r}
 cv_df = 
+  
+  # Run cross validation on the bwt_df
   crossv_mc(bwt_df, 100) %>% 
   
+  # Convert training and test observations to a tibble
   mutate(
     train = map(train, as_tibble), 
     test = map(test, as_tibble)) %>% 
   
+  # Map the linear models over the training dataset
   mutate(
       fit1 = 
         map(.x = train, ~lm(bwt ~ blength + gaweeks, data = .x)),
@@ -224,6 +238,7 @@ cv_df =
       fit3 = 
         map(.x = train, ~lm(bwt ~ wtgain + fincome, data = .x))) %>% 
   
+  # Obtain rmse values of each model for the test dataset
   mutate(
       rmse_fit1 = map2_dbl(.x = fit1, .y = test, 
                              ~rmse(model = .x, data = .y)),
@@ -291,11 +306,11 @@ bwt_df %>%
 ```
 
 
-### Problem 3
+## Problem 3
 
-Import the data
+#### Import the data
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 weather_df = 
   rnoaa::meteo_pull_monitors(
     c("USW00094728"),
@@ -309,5 +324,69 @@ weather_df =
   select(name, id, everything())
 ```
 
+#### R- squared
+
+NEED TO CHANGE TO 5000
+
+```{r}
+# Run the bootstrap to calculate mean r - square
+weather_df %>% 
+  bootstrap(1000, id = "strap_number") %>% 
+  
+  # Run the linear model across the bootstrap observations
+  mutate(
+    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)), 
+    results = map(models, broom::glance)) %>% 
+  
+  # Tidy data
+  select(strap_number, results) %>% 
+  unnest(results) %>% 
+  select(strap_number, r.squared) %>% 
+  
+  # Calculate average r-squared value for bootstrap observations
+  summarize(mean_r_square = mean(r.squared))
+```
+
+interpret
+
+```{r}
+# Run the bootstrap to create r - squared plot
+weather_df %>% 
+  bootstrap(1000, id = "strap_number") %>% 
+  
+  # Run the linear model across the bootstrap observations
+  mutate(
+    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)), 
+    results = map(models, broom::glance)) %>% 
+  
+  # Tidy data
+  select(strap_number, results) %>% 
+  unnest(results) %>% 
+  select(strap_number, r.squared) %>% 
+  
+  # Create a distribution plot of r.squared values
+  ggplot(aes(x = r.squared)) +
+  geom_density()
+
+
+######identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval 
+
+```
+
+
+
+
+
+
+
+
+
+```{r}
+#lm(tmax ~ tmin, data = weather_df) %>% 
+#  broom::tidy() %>% 
+#  sel
+#  term = str_replace(term,"\\(Intercept\\)","Intercept") %>% 
+#  log = log(Intercept*tmin)
+```
 
 
