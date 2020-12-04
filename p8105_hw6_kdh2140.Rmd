@@ -10,6 +10,7 @@ output: github_document
 library(tidyverse)
 library(modelr)
 library(p8105.datasets)
+library(mgcv)
 
 theme_set(theme_minimal() + theme(legend.position = "bottom"))
 
@@ -60,6 +61,7 @@ homicide_df =
   select(city_state, resolved, victim_age, victim_race, victim_sex)
 ```
 
+#### Fitting the model for Baltimore
 
 ```{r}
 # Create a dataframe with only Baltimore, MD
@@ -84,6 +86,8 @@ glm(resolved ~ victim_age + victim_race + victim_sex,
   knitr::kable(digits = 3)
 ```
 
+#### Mapping the model over the entire dataset
+
 ```{r}
 models_results_df = 
   homicide_df %>% 
@@ -104,6 +108,8 @@ models_results_df =
   select(city_state, term, OR, starts_with("CI"))
 ```
 
+#### Visualization
+
 ```{r}
 models_results_df %>% 
   filter(term == "victim_sexMale") %>% 
@@ -116,7 +122,7 @@ models_results_df %>%
 
 ## Problem 2
 
-Import and clean data
+#### Import and Tidy Data
 
 ```{r message=FALSE, warning=FALSE}
 bwt_df = 
@@ -158,35 +164,116 @@ The model is as follows:
 
 * **Model 3:** birthweight ~ wtgain + fincome
 
-### Fit a linear model
+#### Fit linear models
 
 ```{r}
-fit = lm(bwt ~ wtgain + fincome, data = bwt_df)
+fit1 = lm(bwt ~ blength + gaweeks, data = bwt_df)
 
-fit %>% 
+fit2 = lm(bwt ~ blength + bhead + babysex + 
+                blength*bhead + blength*babysex + bhead*babysex +
+                blength*bhead*babysex,
+              data = bwt_df)
+
+fit3 = lm(bwt ~ wtgain + fincome, data = bwt_df)
+
+fit1 %>% 
+broom::tidy()
+
+fit2 %>% 
+broom::tidy()
+
+fit3 %>% 
 broom::tidy()
 ```
 
-### Check residual plot
+#### Check residual plots
 
 ```{r}
-modelr::add_residuals(bwt_df, fit) %>% 
-  ggplot(aes(x = wtgain, y = resid)) +
+modelr::add_residuals(bwt_df, fit3) %>% 
+  ggplot(aes(x = wtgain, y = resid, color = fincome)) +
   geom_point()  
 
 bwt_df %>% 
-  modelr::add_residuals(fit) %>% 
-  ggplot(aes(x = fincome, y = resid)) + 
-  geom_point() 
+  modelr::add_residuals(fit3) %>% 
+  ggplot(aes(x = fincome, y = resid, color = wtgain)) + 
+  geom_point(alpha = 0.8) 
 ```
 
 With both predictors, residuals appear randomly scattered around the 0 line. 
+
+#### Cross validation
+
+```{r}
+cv_df = 
+  crossv_mc(bwt_df, 100) %>% 
+  
+  mutate(
+    train = map(train, as_tibble), 
+    test = map(test, as_tibble)) %>% 
+  
+  mutate(
+      fit1 = 
+        map(.x = train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+      
+      fit2 = 
+        map(.x = train, ~lm(bwt ~ blength + bhead + babysex + 
+                            blength*bhead + blength*babysex + bhead*babysex +
+                            blength*bhead*babysex, 
+                          data = .x)),
+      
+      fit3 = 
+        map(.x = train, ~lm(bwt ~ wtgain + fincome, data = .x))) %>% 
+  
+  mutate(
+      rmse_fit1 = map2_dbl(.x = fit1, .y = test, 
+                             ~rmse(model = .x, data = .y)),
+      rmse_fit2 = map2_dbl(.x = fit2, .y = test, 
+                             ~rmse(model = .x, data = .y)),
+      rmse_fit3 = map2_dbl(.x = fit3, .y = test, 
+                             ~rmse(model = .x, data = .y)))
+```
+
+
+#### Analysis of results
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse", 
+    names_prefix = "rmse_"
+  ) %>% 
+  ggplot(aes(x = model, y = rmse)) + 
+  geom_violin()
+```
+
+#### Calculate average RMSE
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse", 
+    names_prefix = "rmse_"
+  ) %>% 
+  group_by(model) %>% 
+  summarize(avg_rmse = mean(rmse))
+```
+
+
+#### Extra code
 
 ```{r}
 bwt_df %>% 
 ggplot(aes(x = wtgain, y = bwt)) +
   geom_point(alpha = 0.3) +
-  geom_smooth(method = "lm")
+  geom_smooth(method = "lm", se = F,
+              aes(group = fincome,                                  
+              color = fincome))
 
 bwt_df %>% 
 ggplot(aes(x = fincome, y = bwt)) +
@@ -194,23 +281,33 @@ ggplot(aes(x = fincome, y = bwt)) +
   geom_smooth(method = "lm")
 ```
 
-Don't seem related...
 
 ```{r, eval = FALSE}
 bwt_df %>% 
-  add_predictions(linear_mod) %>% 
-  ggplot(aes(x = x, y = y)) + 
+  add_predictions(fit) %>% 
+  ggplot(aes(x = wtgain, y = bwt)) + 
   geom_point() +
   geom_line(aes(y = pred), color = "blue")
 ```
 
 
-
-
 ### Problem 3
 
+Import the data
 
-
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
 
 
 
