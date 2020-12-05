@@ -196,6 +196,8 @@ fit3 %>%
 broom::tidy()
 ```
 
+All models appear to have a significant relationship between predictors and outcome. 
+
 #### Check residual plots
 
 ```{r resid_bwt}
@@ -209,7 +211,7 @@ bwt_df %>%
   geom_point(alpha = 0.8) 
 ```
 
-With both predictors, residuals appear randomly scattered around the 0 line. 
+With both predictors for model 3 (wtgain, fincome), residuals appear randomly scattered around the 0 line. 
 
 #### Cross validation
 
@@ -248,7 +250,6 @@ cv_df =
                              ~rmse(model = .x, data = .y)))
 ```
 
-
 #### Analysis of results
 
 ```{r}
@@ -264,9 +265,11 @@ cv_df %>%
   geom_violin()
 ```
 
+Graphically, model 2 (interaction model) appears to have the lowest average root mean square error of all three models, with model 1 only slightly higher and model 3 much higher.  
+
 #### Calculate average RMSE
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 cv_df %>% 
   select(starts_with("rmse")) %>% 
   pivot_longer(
@@ -279,10 +282,11 @@ cv_df %>%
   summarize(avg_rmse = mean(rmse))
 ```
 
+The above table reports average root mean squared error, which confirms the above interpretations. 
 
-#### Extra code
+#### Visualizations
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 bwt_df %>% 
 ggplot(aes(x = wtgain, y = bwt)) +
   geom_point(alpha = 0.3) +
@@ -296,25 +300,7 @@ ggplot(aes(x = fincome, y = bwt)) +
   geom_smooth(method = "lm")
 ```
 
-
-```{r, eval = FALSE}
-bwt_df %>% 
-  add_predictions(fit) %>% 
-  ggplot(aes(x = wtgain, y = bwt)) + 
-  geom_point() +
-  geom_line(aes(y = pred), color = "blue")
-```
-
-
-model_fit = lm(bwt ~ gaweeks, data = baby_df)
-
-baby_df %>% 
-  modelr::add_residuals(model_fit) %>% 
-  ggplot(aes(x = gaweeks, y = resid)) + 
-  geom_point()
-
-
-
+The above plots depict changes in outcome by predictor for model 3 (wtgain, fincome)
 
 ## Problem 3
 
@@ -334,56 +320,50 @@ weather_df =
   select(name, id, everything())
 ```
 
-#### R- squared
-
-NEED TO CHANGE TO 5000
+#### R- squared Bootstrap Distributions 
 
 ```{r}
-# Run the bootstrap to calculate mean r - square
-weather_df %>% 
-  bootstrap(1000, id = "strap_number") %>% 
+# Run the bootstrap to create r - squared dataframe
+boot_rsq = 
+  weather_df %>% 
+    bootstrap(5000, id = "strap_number") %>% 
+    
+    # Run the linear model across the bootstrap observations
+    mutate(
+      models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)), 
+      results = map(models, broom::glance)) %>% 
+    
+    # Tidy data
+    select(strap_number, results) %>% 
+    unnest(results) %>% 
+    select(strap_number, r.squared) 
   
-  # Run the linear model across the bootstrap observations
-  mutate(
-    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)), 
-    results = map(models, broom::glance)) %>% 
-  
-  # Tidy data
-  select(strap_number, results) %>% 
-  unnest(results) %>% 
-  select(strap_number, r.squared) %>% 
-  
-  # Calculate average r-squared value for bootstrap observations
+
+# Calculate average r-squared value for bootstrap observations
+boot_rsq %>%   
   summarize(mean_r_square = mean(r.squared))
 ```
 
-interpret
+The mean r squared value over 5000 bootstrap samples is equal to ~0.911. About 91.1% of the variance in the maximum temperature is explained by the minimum temperature in this linear regression. 
 
 ```{r}
-# Run the bootstrap to create r - squared plot
-weather_df %>% 
-  bootstrap(1000, id = "strap_number") %>% 
-  
-  # Run the linear model across the bootstrap observations
-  mutate(
-    models = map(.x = strap, ~lm(tmax ~ tmin, data = .x)), 
-    results = map(models, broom::glance)) %>% 
-  
-  # Tidy data
-  select(strap_number, results) %>% 
-  unnest(results) %>% 
-  select(strap_number, r.squared) %>% 
-  
-  # Create a distribution plot of r.squared values
+# Create a distribution plot of r.squared values
+boot_rsq %>% 
   ggplot(aes(x = r.squared)) +
   geom_density() 
+  
 
-
-######identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval 
-
+# Obtaining confidence intervals
+ci_lower_r = quantile(pull(boot_rsq, r.squared), 0.025)
+ci_upper_r = quantile(pull(boot_rsq, r.squared), 0.975)
 ```
 
-#### log(beta)
+The above plot depicts the distribution of r-squared values over 5000 bootstrap samples. 
+
+Quantile estimates for r-squared are `r ci_lower_r` , `r ci_upper_r`. We are 95% confident that the true r-squared falls between ~89.37% and ~92.74%. 
+
+
+#### Log(beta) Bootstrap Distributions
 
 ```{r}
 
@@ -414,44 +394,38 @@ obtain_log = function(df) {
 
 ### Run the bootstrap to calculate mean log_betas
 
-weather_df %>% 
-  bootstrap(1000, id = "strap_number") %>% 
-  
-  # Run the linear model across the bootstrap observations
-  mutate(
-    models = map(.x = strap, ~obtain_log(.x))) %>% 
-  
-  # Tidy data
-  select(strap_number, models) %>% 
-  unnest(models) %>% 
-  select(strap_number, log_betas) %>% 
-  
-  # Calculate average log_betas value for bootstrap observations
-  summarize(mean_log_betas = mean(log_betas))
+boot_log =
+  weather_df %>% 
+    bootstrap(5000, id = "strap_number") %>% 
+    
+    # Run the linear model across the bootstrap observations
+    mutate(
+      models = map(.x = strap, ~obtain_log(.x))) %>% 
+    
+    # Tidy data
+    select(strap_number, models) %>% 
+    unnest(models) %>% 
+    select(strap_number, log_betas) 
+
+# Calculate average log_betas value for bootstrap observations
+boot_log %>% 
+    summarize(mean_log_betas = mean(log_betas))
 
 ```
 
-interpret
+The average value of the log of beta_0 by beta_1 over 5000 bootstraps is roughly equal to 2.01.
 
 ```{r}
-# Run the bootstrap to create log_beta plot
-weather_df %>% 
-  bootstrap(1000, id = "strap_number") %>% 
-  
-  # Run the linear model across the bootstrap observations
-  mutate(
-    models = map(.x = strap, ~obtain_log(.x))) %>% 
-  
-  # Tidy data
-  select(strap_number, models) %>% 
-  unnest(models) %>% 
-  select(strap_number, log_betas) %>% 
-  
-  # Create a distribution plot of r.squared values
+# Create a distribution plot of log_beta values
+boot_log %>% 
   ggplot(aes(x = log_betas)) +
   geom_density() 
 
-
-######identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval 
+# Obtaining confidence intervals
+ci_lower_log = quantile(pull(boot_log, log_betas), 0.025)
+ci_upper_log = quantile(pull(boot_log, log_betas), 0.975)
 ```
 
+The above plot depicts the distribution of log(beta) values over 5000 bootstrap samples. 
+
+Quantile estimates for log(beta) are `r ci_lower_log` , `r ci_upper_log`. We are 95% confident that the true log(beta) falls between ~1.97 and ~2.06. 
